@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from "react";
+import brandPhoto from "./assets/schoolLogo.jpg";
 import { supabase } from "./supabase";
 import "./App.css";
 
@@ -29,6 +30,7 @@ export default function App() {
   const [items, setItems] = useState([]);
   const [claims, setClaims] = useState([]);
   const [page, setPage] = useState("browse");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [authMode, setAuthMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -362,7 +364,7 @@ export default function App() {
     return (
       <main className="auth-screen">
         <form className="auth-card" onSubmit={authenticate}>
-          <div className="brand-mark">LF</div>
+          <img className="brand-mark" src={brandPhoto} alt="CampusFind brand mark" />
           <p className="eyebrow">CAMPUS COMMUNITY</p>
           <h1>Lost something?</h1>
           <p className="muted">
@@ -431,18 +433,30 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className={`sidebar ${menuOpen ? "menu-open" : ""}`}>
         <div className="brand">
-          <div className="brand-mark">LF</div>
-          <div>
+          <img className="brand-mark" src={brandPhoto} alt="CampusFind brand mark" />
+          <div className="brand-copy">
             <strong>CampusFind</strong>
             <small>Lost & Found</small>
           </div>
+          <button
+            type="button"
+            className="menu-toggle"
+            aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
         </div>
 
-        <p className="nav-label">WORKSPACE</p>
+        <div className={`sidebar-menu ${menuOpen ? "open" : ""}`}>
+          <p className="nav-label">WORKSPACE</p>
 
-        {[
+          {[
           ["browse", "Browse items"],
           ["report", "Report an item"],
           ["my-items", "My reports"],
@@ -450,23 +464,25 @@ export default function App() {
           ...(["staff", "admin"].includes(profile?.role)
             ? [["review", "Claim review"]]
             : []),
-        ].map(([key, label]) => (
-          <button
-            key={key}
-            className={`nav-button ${page === key ? "active" : ""}`}
-            onClick={() => {
-              setPage(key);
-              setMessage("");
-            }}
-          >
-            {label}
-          </button>
-        ))}
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              className={`nav-button ${page === key ? "active" : ""}`}
+              onClick={() => {
+                setPage(key);
+                setMessage("");
+                setMenuOpen(false);
+              }}
+            >
+              {label}
+            </button>
+          ))}
 
-        <div className="sidebar-bottom">
-          <small>{profile?.full_name || session.user.email}</small>
-          <small>{profile?.role || "Loading profile..."}</small>
-          <button className="text-button" onClick={signOut}>Sign out</button>
+          <div className="sidebar-bottom">
+            <small>{profile?.full_name || session.user.email}</small>
+            <small>{profile?.role || "Loading profile..."}</small>
+            <button className="text-button" onClick={signOut}>Sign out</button>
+          </div>
         </div>
       </aside>
 
