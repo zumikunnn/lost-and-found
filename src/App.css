@@ -274,6 +274,10 @@ textarea {
   margin-bottom: 28px;
 }
 
+.topbar h1 {
+  color: #000;
+}
+
 .topbar .eyebrow {
   margin-bottom: 8px;
 }
