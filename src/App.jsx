@@ -351,6 +351,8 @@ export default function App() {
   }, [items]);
 
   const visibleItems = items.filter((item) => {
+    if (item.status !== "open") return false;
+
     const text = `${item.title} ${item.description} ${item.location} ${item.category}`
       .toLowerCase();
 
@@ -579,12 +581,6 @@ export default function App() {
                       {item.category} · {item.item_date}
                     </p>
 
-                    {item.status !== "open" && (
-                      <span className="muted">
-                        Status: {item.status.replace("_", " ")}
-                      </span>
-                    )}
-
                     {item.status === "open" &&
                       item.user_id !== session.user.id && (
                         <button
@@ -601,8 +597,8 @@ export default function App() {
 
             {visibleItems.length === 0 && (
               <div className="empty-state">
-                <h3>No matching items</h3>
-                <p>Try another search or check back later.</p>
+                <h3>No open matching items</h3>
+                <p>Try another search or check back later. Claimed and resolved reports remain in My reports.</p>
               </div>
             )}
           </>
