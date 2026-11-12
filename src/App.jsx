@@ -29,11 +29,14 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [items, setItems] = useState([]);
   const [claims, setClaims] = useState([]);
+  const [claimantProfiles, setClaimantProfiles] = useState({});
   const [page, setPage] = useState("browse");
   const [menuOpen, setMenuOpen] = useState(false);
   const [authMode, setAuthMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
@@ -55,11 +58,16 @@ export default function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setAuthMode("reset-password");
+        setMessage("Enter your new password below.");
+      }
       setSession(nextSession);
       setProfile(null);
       setItems([]);
       setClaims([]);
+      setClaimantProfiles({});
     });
 
     return () => {
@@ -117,8 +125,35 @@ export default function App() {
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (error) setMessage(error.message);
-    else setClaims(data ?? []);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    const claimRows = data ?? [];
+    setClaims(claimRows);
+
+    // Load claimant names so staff/admin do not have to identify users by UUID.
+    const claimantIds = [...new Set(claimRows.map((claim) => claim.claimant_id).filter(Boolean))];
+    if (claimantIds.length === 0) {
+      setClaimantProfiles({});
+      return;
+    }
+
+    const { data: profiles, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", claimantIds);
+
+    if (profileError) {
+      console.error("Could not load claimant names:", profileError.message);
+      setClaimantProfiles({});
+      return;
+    }
+
+    setClaimantProfiles(
+      Object.fromEntries((profiles ?? []).map((person) => [person.id, person.full_name]))
+    );
   }
 
   async function authenticate(event) {
@@ -154,6 +189,60 @@ export default function App() {
         if (error) throw error;
         setMessage("Signed in successfully.");
       }
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function requestPasswordReset(event) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!normalizedEmail) throw new Error("Enter your campus email first.");
+
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: window.location.origin,
+      });
+      if (error) throw error;
+
+      setMessage("If an account exists for that email, a password-reset link has been sent. Check your inbox and spam folder.");
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveNewPassword(event) {
+    event.preventDefault();
+    setMessage("");
+
+    if (newPassword.length < 8) {
+      setMessage("Your new password must be at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setMessage("The passwords do not match.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+
+      await supabase.auth.signOut();
+      setSession(null);
+      setAuthMode("login");
+      setPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setMessage("Your password has been updated. You can now sign in with your new password.");
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -362,37 +451,94 @@ export default function App() {
     return matchesSearch && matchesFilter;
   });
 
+  if (authMode === "reset-password") {
+    return (
+      <main className="auth-screen">
+        <form className="auth-card" onSubmit={saveNewPassword}>
+          <img className="brand-mark" src={brandPhoto} alt="CampusFind brand mark" />
+          <p className="eyebrow">ACCOUNT RECOVERY</p>
+          <h1>Set a new password</h1>
+          <p className="muted">Choose a new password for your CampusFind account.</p>
+          <label>
+            New password
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              minLength={8}
+              autoComplete="new-password"
+              required
+            />
+          </label>
+          <label>
+            Confirm new password
+            <input
+              type="password"
+              value={confirmNewPassword}
+              onChange={(e) => setConfirmNewPassword(e.target.value)}
+              minLength={8}
+              autoComplete="new-password"
+              required
+            />
+          </label>
+          <button className="primary full" disabled={busy}>
+            {busy ? "Updating password..." : "Update password"}
+          </button>
+          {message && <p className="notice">{message}</p>}
+        </form>
+      </main>
+    );
+  }
+
   if (!session) {
+    if (authMode === "forgot-password") {
+      return (
+        <main className="auth-screen">
+          <form className="auth-card" onSubmit={requestPasswordReset}>
+            <img className="brand-mark" src={brandPhoto} alt="CampusFind brand mark" />
+            <p className="eyebrow">ACCOUNT RECOVERY</p>
+            <h1>Forgot password?</h1>
+            <p className="muted">Enter your campus email and we will send you a password-reset link.</p>
+            <label>
+              Campus email
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+              />
+            </label>
+            <button className="primary full" disabled={busy}>
+              {busy ? "Sending link..." : "Send reset link"}
+            </button>
+            <button type="button" className="text-button" onClick={() => { setAuthMode("login"); setMessage(""); }}>
+              Back to sign in
+            </button>
+            {message && <p className="notice">{message}</p>}
+          </form>
+        </main>
+      );
+    }
+
     return (
       <main className="auth-screen">
         <form className="auth-card" onSubmit={authenticate}>
           <img className="brand-mark" src={brandPhoto} alt="CampusFind brand mark" />
           <p className="eyebrow">CAMPUS COMMUNITY</p>
           <h1>Lost something?</h1>
-          <p className="muted">
-            Find your belongings or help return something to its owner.
-          </p>
+          <p className="muted">Find your belongings or help return something to its owner.</p>
 
           {authMode === "register" && (
             <label>
               Full name
-              <input
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-                maxLength={100}
-              />
+              <input value={fullName} onChange={(e) => setFullName(e.target.value)} required maxLength={100} />
             </label>
           )}
 
           <label>
             Campus email
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
           </label>
 
           <label>
@@ -403,16 +549,19 @@ export default function App() {
               onChange={(e) => setPassword(e.target.value)}
               minLength={8}
               required
+              autoComplete={authMode === "login" ? "current-password" : "new-password"}
             />
           </label>
 
           <button className="primary full" disabled={busy}>
-            {busy
-              ? "Please wait..."
-              : authMode === "login"
-                ? "Sign in"
-                : "Create campus account"}
+            {busy ? "Please wait..." : authMode === "login" ? "Sign in" : "Create campus account"}
           </button>
+
+          {authMode === "login" && (
+            <button type="button" className="text-button" onClick={() => { setAuthMode("forgot-password"); setMessage(""); }}>
+              Forgot password?
+            </button>
+          )}
 
           <button
             type="button"
@@ -422,9 +571,7 @@ export default function App() {
               setMessage("");
             }}
           >
-            {authMode === "login"
-              ? "New here? Create an account"
-              : "Already registered? Sign in"}
+            {authMode === "login" ? "New here? Create an account" : "Already registered? Sign in"}
           </button>
 
           {message && <p className="notice">{message}</p>}
@@ -587,7 +734,7 @@ export default function App() {
                           className="primary full"
                           onClick={() => setClaimItem(item)}
                         >
-                          Claim item
+                          {item.report_type === "lost" ? "Found item" : "Claim item"}
                         </button>
                       )}
                   </div>
@@ -733,7 +880,8 @@ export default function App() {
                 <p><strong>Item:</strong> {items.find(
                   (item) => item.id === claim.item_id
                 )?.title || claim.item_id}</p>
-                <p><strong>Claimant ID:</strong> {claim.claimant_id}</p>
+                <p><strong>Claimant:</strong> {claimantProfiles[claim.claimant_id] || "Name unavailable"}</p>
+                <p className="muted"><strong>Account reference:</strong> {claim.claimant_id}</p>
                 <p><strong>Proof:</strong> {claim.proof}</p>
                 <p><strong>Status:</strong> {claim.status}</p>
 
